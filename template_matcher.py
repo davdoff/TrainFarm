@@ -17,6 +17,30 @@ import sys
 from pathlib import Path
 
 
+def get_scale_factor():
+    """
+    Calculate the scale factor between screenshot resolution and PyAutoGUI coordinates.
+    This handles Retina displays and high-DPI screens.
+
+    Returns:
+        float: Scale factor (e.g., 2.0 for Retina displays)
+    """
+    # Get PyAutoGUI screen size (logical resolution)
+    screen_width, screen_height = pyautogui.size()
+
+    # Get actual screenshot size (physical resolution)
+    screenshot = pyautogui.screenshot()
+    screenshot_np = np.array(screenshot)
+    screenshot_height, screenshot_width = screenshot_np.shape[:2]
+
+    # Calculate scale factor
+    scale_x = screenshot_width / screen_width
+    scale_y = screenshot_height / screen_height
+
+    # They should be the same, but take average just in case
+    return (scale_x + scale_y) / 2
+
+
 def find_template_on_screen(template_path, threshold=0.8):
     """
     Find a template image on the current screen.
@@ -59,20 +83,24 @@ def find_template_on_screen(template_path, threshold=0.8):
     if max_val < threshold:
         return None
 
-    # Calculate coordinates
+    # Get scale factor for Retina/HiDPI displays
+    scale_factor = get_scale_factor()
+
+    # Calculate coordinates in screenshot space
     top_left = max_loc
     bottom_right = (top_left[0] + template_width, top_left[1] + template_height)
     center_x = top_left[0] + template_width // 2
     center_y = top_left[1] + template_height // 2
 
+    # Convert to PyAutoGUI coordinate space (divide by scale factor)
     return {
-        'x': center_x,
-        'y': center_y,
-        'top_left': top_left,
-        'bottom_right': bottom_right,
+        'x': int(center_x / scale_factor),
+        'y': int(center_y / scale_factor),
+        'top_left': (int(top_left[0] / scale_factor), int(top_left[1] / scale_factor)),
+        'bottom_right': (int(bottom_right[0] / scale_factor), int(bottom_right[1] / scale_factor)),
         'confidence': max_val,
-        'width': template_width,
-        'height': template_height
+        'width': int(template_width / scale_factor),
+        'height': int(template_height / scale_factor)
     }
 
 
@@ -98,6 +126,9 @@ def find_all_matches(template_path, threshold=0.8):
 
     result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
 
+    # Get scale factor for Retina/HiDPI displays
+    scale_factor = get_scale_factor()
+
     # Find all locations above threshold
     locations = np.where(result >= threshold)
     matches = []
@@ -109,14 +140,15 @@ def find_all_matches(template_path, threshold=0.8):
         center_y = pt[1] + template_height // 2
         confidence = result[pt[1], pt[0]]
 
+        # Convert to PyAutoGUI coordinate space (divide by scale factor)
         matches.append({
-            'x': center_x,
-            'y': center_y,
-            'top_left': top_left,
-            'bottom_right': bottom_right,
+            'x': int(center_x / scale_factor),
+            'y': int(center_y / scale_factor),
+            'top_left': (int(top_left[0] / scale_factor), int(top_left[1] / scale_factor)),
+            'bottom_right': (int(bottom_right[0] / scale_factor), int(bottom_right[1] / scale_factor)),
             'confidence': float(confidence),
-            'width': template_width,
-            'height': template_height
+            'width': int(template_width / scale_factor),
+            'height': int(template_height / scale_factor)
         })
 
     return matches
