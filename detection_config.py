@@ -2,20 +2,30 @@
 """
 Detection Configuration
 Centralized configuration for task card borders and material detection zones.
+All coordinates are now WINDOW-RELATIVE PERCENTAGES (0.0 to 1.0).
 Adjust these values when calibrating for different devices.
 """
 
 # ============================================================================
-# TASK CARD BORDER SETTINGS
+# TASK CARD BORDER SETTINGS (WINDOW-RELATIVE PERCENTAGES)
 # ============================================================================
-# These define where task cards are located on screen.
+# These define where task cards are located within the game window.
+# Values are percentages of window width/height (0.0 = left/top, 1.0 = right/bottom)
 # Calibrate using: python calibrate_borders.py
+#
+# OLD VALUES (for reference if clicks fail):
+#   CARD_WIDTH = 374 px
+#   CARD_HEIGHT = 610 px
+#   CARD_START_X = 115 px
+#   CARD_START_Y = 195 px
+#   CARD_SPACING = 397 px
+#   Assumed screen width: ~1920 px, height: ~1080 px
 
-CARD_WIDTH = 374        # Width of each task card (pixels)
-CARD_HEIGHT = 610       # Height of each task card (pixels)
-CARD_START_X = 115      # X position of first card's left edge (pixels)
-CARD_START_Y = 195      # Y position of cards' top edge (pixels)
-CARD_SPACING = 397      # Horizontal distance between card centers (pixels)
+CARD_WIDTH = 0.195        # Width of each task card (19.5% of window width, ~374px @ 1920px)
+CARD_HEIGHT = 0.565       # Height of each task card (56.5% of window height, ~610px @ 1080px)
+CARD_START_X = 0.06       # X position of first card's left edge (6% from window left, ~115px @ 1920px)
+CARD_START_Y = 0.18       # Y position of cards' top edge (18% from window top, ~195px @ 1080px)
+CARD_SPACING = 0.207      # Horizontal distance between card centers (20.7% of window width, ~397px @ 1920px)
 
 # ============================================================================
 # MATERIAL DETECTION ZONE SETTINGS
@@ -94,14 +104,15 @@ OPERATOR_COUNT_ZONE_HEIGHT = 0.04  # Height of text detection area (4% of screen
 # Text color detection ranges
 BLACK_TEXT_MAX = 80         # Maximum grayscale value for black text (0-255)
 
-# Number size filters (pixels)
+# Number size filters (pixels - these are relative to captured regions, not window)
 NUMBER_MIN_WIDTH = 10       # Minimum width of detected numbers
 NUMBER_MAX_WIDTH = 60       # Maximum width of detected numbers
 NUMBER_MIN_HEIGHT = 10      # Minimum height of detected numbers
 NUMBER_MAX_HEIGHT = 30      # Maximum height of detected numbers
 
-# Click offset
-CLICK_OFFSET_Y = -50        # Pixels above the number to click (negative = up)
+# Click offset (WINDOW-RELATIVE PERCENTAGE)
+# OLD VALUE: CLICK_OFFSET_Y = -50 px (negative = up, ~50px above @ 1080px height)
+CLICK_OFFSET_Y = -0.046     # Percentage offset above number (4.6% of window height, ~50px @ 1080px)
 
 # ============================================================================
 # NOTES FOR CALIBRATION

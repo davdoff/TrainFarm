@@ -18,7 +18,6 @@ from pathlib import Path
 from template_matcher import find_template_on_screen, find_all_matches
 from ui_config import UIConfig
 from color_detector import ColorDetector
-from operator_checker import OperatorChecker
 from resource_collector import ResourceCollector
 from resource_generator import ResourceGenerator
 from task_card_detector import TaskCardDetector
@@ -29,23 +28,33 @@ from train_dispatcher import TrainDispatcher
 class TaskAutomation:
     """Main automation controller."""
 
-    def __init__(self, click_delay: float = 0.5):
+    def __init__(self, click_delay: float = 0.5, use_window_mode: bool = False, window_title: str = None):
         """
         Initialize the automation system.
 
         Args:
             click_delay: Delay between clicks in seconds
+            use_window_mode: If True, use window-relative coordinates (for windowed/half-screen mode)
+            window_title: Title of game window to find (optional, defaults to left half of screen)
         """
+        # Initialize window manager first
+        from window_manager import WindowManager
+        self.window_manager = WindowManager(use_window_mode=use_window_mode, window_title=window_title)
+
+        if use_window_mode:
+            info = self.window_manager.get_window_info()
+            print(f"Window mode enabled: {info['width']}x{info['height']} at ({info['x']}, {info['y']})")
+        else:
+            print("Full screen mode enabled")
+
         self.config = UIConfig()
         self.color_detector = ColorDetector()
-        self.operator_checker = OperatorChecker()
         self.resource_collector = ResourceCollector()
         self.resource_generator = ResourceGenerator()
-        self.task_card_detector = TaskCardDetector()
+        self.task_card_detector = TaskCardDetector(window_manager=self.window_manager)
         self.material_scanner = MaterialScanner()
         self.train_dispatcher = TrainDispatcher()
         self.click_delay = click_delay
-        self.available_operators = 0  # Track how many operators we have
 
         # Safety feature: enable fail-safe (move mouse to corner to abort)
         pyautogui.FAILSAFE = True
@@ -670,26 +679,6 @@ class TaskAutomation:
         print("="*60)
 
         try:
-            # Step 0: Check if operators are available
-            print("\n=== Step 0: Checking Operator Availability ===")
-            if not self.operator_checker.has_available_operators():
-                print("❌ No operators available - all are occupied")
-
-                # Try to read when next operator will be available
-                wait_time = self.operator_checker.read_next_operator_timer()
-                if wait_time:
-                    minutes = wait_time // 60
-                    seconds = wait_time % 60
-                    print(f"⏱️  Next operator available in: {minutes}m {seconds}s")
-                    return False  # Signal to retry later
-                else:
-                    print("⏱️  Could not read timer - will retry in 60 seconds")
-                    return False  # Signal to retry later
-
-            # Get the count of available operators for train dispatching
-            self.available_operators = self.operator_checker.get_available_operator_count()
-            print(f"Will dispatch trains for {self.available_operators} operator(s)")
-
             # Step 1: Open task menu
             if not self.open_task_menu():
                 print("Failed to open task menu")
@@ -729,12 +718,13 @@ class TaskAutomation:
                 print("No completed task collect button found")
 
             # Step 1.5: Find next available task using task card detector
+            # This will automatically scroll if no tasks are available in current view
             print("\n=== Finding Next Available Task ===")
-            available_task = self.task_card_detector.find_first_available_task()
+            available_task = self.task_card_detector.find_first_available_task(max_scrolls=3)
 
             if not available_task:
-                print("❌ No available tasks found")
-                print("All visible tasks are completing or locked.")
+                print("❌ No available tasks found after scrolling")
+                print("All tasks are completing, locked, or not accessible.")
                 self.close_task_dialog()
                 return False  # Retry later
 
@@ -797,10 +787,8 @@ class TaskAutomation:
                 else:
                     print("ℹ️  No collect buttons found, proceeding to dispatch trains")
 
-                # Now dispatch trains for all available operators
-                dispatch_success = self.train_dispatcher.dispatch_trains_for_task(
-                    self.available_operators
-                )
+                # Now dispatch trains (default: 1 train)
+                dispatch_success = self.train_dispatcher.dispatch_trains_for_task(1)
 
                 if dispatch_success:
                     print("✅ Task started and trains dispatched successfully!")
@@ -875,10 +863,8 @@ class TaskAutomation:
                 else:
                     print("ℹ️  No collect buttons found, proceeding to dispatch trains")
 
-                # Now dispatch trains for all available operators
-                dispatch_success = self.train_dispatcher.dispatch_trains_for_task(
-                    self.available_operators
-                )
+                # Now dispatch trains (default: 1 train)
+                dispatch_success = self.train_dispatcher.dispatch_trains_for_task(1)
 
                 if dispatch_success:
                     print("✅ Task started and trains dispatched successfully!")
@@ -926,20 +912,44 @@ class TaskAutomation:
                         print("⏳ Waiting for material generation UI to load...")
                         time.sleep(3.0)  # Wait for navigation to source and UI to load
 
-                        # Dispatch trains to generate materials
-                        generation_success = self._dispatch_trains_for_material_generation(
-                            deliver_amount, warehouse_stock
-                        )
+                        # Use ResourceGenerator to handle factory or mine
+                        from resource_generator import ResourceGenerator
+                        resource_gen = ResourceGenerator()
+
+                        # Detect if we're at factory or mine
+                        location_type = resource_gen.detect_location_type()
+                        print(f"📍 Location type: {location_type.upper()}")
+
+                        generation_success = False
+
+                        if location_type == 'factory':
+                            print("🏭 Factory detected - using crafting workflow")
+                            # Material icon path (we don't have it here, pass empty for now)
+                            # The craft_in_factory assumes we're already at the factory popup
+                            generation_success = resource_gen.craft_in_factory("")
+                        elif location_type == 'mine':
+                            print("⛏️  Mine detected - dispatching trains")
+                            # Dispatch trains to generate materials
+                            generation_success = self._dispatch_trains_for_material_generation(
+                                deliver_amount, warehouse_stock
+                            )
+                        else:
+                            print("❌ Unknown location type - attempting train dispatch as fallback")
+                            generation_success = self._dispatch_trains_for_material_generation(
+                                deliver_amount, warehouse_stock
+                            )
 
                         if generation_success:
                             print("\n✅ Material generation complete!")
                         else:
                             print("\n⚠️  Material generation incomplete - may not have enough")
 
-                        # Press ESC twice to go back to task menu
-                        print("\nClosing material generation UI...")
-                        pyautogui.press('esc')
-                        time.sleep(1.0)
+                        # Press ESC to go back to task menu (factory workflow handles its own ESC)
+                        if location_type == 'mine':
+                            print("\nClosing material generation UI...")
+                            pyautogui.press('esc')
+                            time.sleep(1.0)
+
                         pyautogui.press('esc')
                         time.sleep(1.0)
 
@@ -985,6 +995,57 @@ class TaskAutomation:
             return False  # Failed, can retry
 
 
+def setup_game_area_interactive():
+    """Interactive game area setup with guided tool."""
+    print("\n" + "="*60)
+    print("Game Area Setup")
+    print("="*60)
+    print("Move your mouse to mark the game boundaries")
+    print()
+
+    # Step 1: Top-left corner
+    print("STEP 1: Mark TOP-LEFT corner of game")
+    print("-" * 60)
+    print("Position your mouse at the TOP-LEFT corner of the GAME CANVAS")
+    print("(Not the browser window - the actual game area)")
+    print()
+    input("Press ENTER when ready...")
+
+    top_left = pyautogui.position()
+    print(f"✅ Top-left: ({top_left[0]}, {top_left[1]})")
+    print()
+
+    # Step 2: Bottom-right corner
+    print("STEP 2: Mark BOTTOM-RIGHT corner of game")
+    print("-" * 60)
+    print("Position your mouse at the BOTTOM-RIGHT corner of the GAME CANVAS")
+    print()
+    input("Press ENTER when ready...")
+
+    bottom_right = pyautogui.position()
+    print(f"✅ Bottom-right: ({bottom_right[0]}, {bottom_right[1]})")
+    print()
+
+    # Calculate dimensions
+    game_x = top_left[0]
+    game_y = top_left[1]
+    game_width = bottom_right[0] - top_left[0]
+    game_height = bottom_right[1] - top_left[1]
+
+    print("="*60)
+    print("Game Area Detected:")
+    print("="*60)
+    print(f"  Position: ({game_x}, {game_y})")
+    print(f"  Size: {game_width} x {game_height}")
+    print()
+
+    # Save to cache
+    from game_area_cache import save_game_area
+    save_game_area(game_x, game_y, game_width, game_height)
+
+    return game_x, game_y, game_width, game_height
+
+
 def main():
     """Main entry point with polling loop."""
     print("="*60)
@@ -992,6 +1053,54 @@ def main():
     print("="*60)
     print("\nThis will continuously monitor and automate tasks")
     print("Move mouse to top-left corner to emergency stop")
+    print()
+
+    # Check for cached game area
+    from game_area_cache import load_last_game_area, print_config
+
+    cached_area = load_last_game_area()
+    use_cached = False
+
+    if cached_area:
+        print("=" * 60)
+        print("Found Previous Game Area Configuration:")
+        print("=" * 60)
+        print_config(cached_area)
+        print()
+        use_cached_input = input("Use these coordinates? (y/n) [y]: ").strip().lower()
+        use_cached = use_cached_input != 'n'
+        print()
+
+    # Determine setup mode
+    if use_cached and cached_area:
+        # Use cached coordinates
+        print("✅ Using saved game area")
+        use_window_mode = True
+        game_coords = cached_area
+        mode_choice = "cached"
+    else:
+        # Ask user for setup method
+        print("Select setup mode:")
+        print("1. Full screen (game is fullscreen - F11)")
+        print("2. Auto-detect game area (guided mouse setup)")
+        print()
+        mode_choice = input("Enter choice (1-2) [2]: ").strip() or "2"
+
+        use_window_mode = False
+        game_coords = None
+
+        if mode_choice == "2":
+            use_window_mode = True
+            # Run interactive setup
+            game_x, game_y, game_width, game_height = setup_game_area_interactive()
+            game_coords = {
+                "x": game_x,
+                "y": game_y,
+                "width": game_width,
+                "height": game_height
+            }
+        else:
+            print("\nUsing full screen mode")
 
     # 5-second startup countdown
     print("\nStarting in:")
@@ -1000,7 +1109,19 @@ def main():
         time.sleep(1)
     print("  Starting automation!\n")
 
-    automation = TaskAutomation(click_delay=0.5)
+    # Initialize automation
+    automation = TaskAutomation(click_delay=0.5, use_window_mode=use_window_mode, window_title=None)
+
+    # Set manual game area if we have coordinates
+    if use_window_mode and game_coords:
+        automation.window_manager.set_manual_window(
+            game_coords["x"],
+            game_coords["y"],
+            game_coords["width"],
+            game_coords["height"]
+        )
+        print()
+
     poll_interval = 30  # Check every 30 seconds for debugging
 
     try:
@@ -1013,20 +1134,9 @@ def main():
                 print(f"⏳ Waiting {poll_interval} seconds before next check...")
                 time.sleep(poll_interval)
             else:
-                # Operators not available, check timer
-                wait_time = automation.operator_checker.read_next_operator_timer()
-
-                if wait_time:
-                    # Add 10 seconds buffer
-                    wait_time += 10
-                    minutes = wait_time // 60
-                    seconds = wait_time % 60
-                    print(f"\n⏳ Waiting {minutes}m {seconds}s for operators to become available...")
-                    time.sleep(wait_time)
-                else:
-                    # Default wait time
-                    print(f"\n⏳ Waiting {poll_interval} seconds before retry...")
-                    time.sleep(poll_interval)
+                # Task failed or not available, wait before retry
+                print(f"\n⏳ Waiting {poll_interval} seconds before retry...")
+                time.sleep(poll_interval)
 
     except pyautogui.FailSafeException:
         print("\n!!! EMERGENCY STOP - Mouse moved to corner !!!")

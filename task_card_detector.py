@@ -14,9 +14,22 @@ from pathlib import Path
 class TaskCardDetector:
     """Detects and analyzes task cards."""
 
-    def __init__(self):
+    def __init__(self, window_manager=None):
+        """
+        Initialize task card detector.
+
+        Args:
+            window_manager: WindowManager instance for coordinate conversion (optional)
+        """
+        self.window_manager = window_manager
         self.green_checkmark_template = None  # You can add this if you want
-        self.screen_width, self.screen_height = pyautogui.size()
+        self.locked_task_template = "Templates/lockedTasksymbol.png"
+
+        if window_manager:
+            self.window_width = window_manager.window_width
+            self.window_height = window_manager.window_height
+        else:
+            self.window_width, self.window_height = pyautogui.size()
 
         # Get scale factor for Retina displays
         self.scale_factor = self._get_scale_factor()
@@ -28,39 +41,50 @@ class TaskCardDetector:
         screenshot_np = np.array(screenshot)
         screenshot_height, screenshot_width = screenshot_np.shape[:2]
 
-        scale_x = screenshot_width / self.screen_width
-        scale_y = screenshot_height / self.screen_height
+        scale_x = screenshot_width / self.window_width
+        scale_y = screenshot_height / self.window_height
 
         return (scale_x + scale_y) / 2
 
     def find_task_cards(self) -> List[Tuple[int, int, int, int]]:
         """
-        Find all task card regions on screen using fixed grid positions.
+        Find all task card regions using window-relative positions.
 
         Returns:
-            List of (x, y, width, height) for each task card found
+            List of (x, y, width, height) for each task card found (in absolute screen coordinates)
         """
         cards = []
 
         # Task cards appear in a horizontal row
-        # Import settings from centralized config file
+        # Import settings from centralized config file (now percentages!)
         from detection_config import (CARD_WIDTH, CARD_HEIGHT, CARD_START_X,
                                       CARD_START_Y, CARD_SPACING)
 
-        card_width = CARD_WIDTH
-        card_height = CARD_HEIGHT
-        start_x = CARD_START_X
-        start_y = CARD_START_Y
-        spacing = CARD_SPACING
+        # Convert window-relative percentages to absolute pixels
+        card_width = int(CARD_WIDTH * self.window_width)
+        card_height = int(CARD_HEIGHT * self.window_height)
+        start_x = int(CARD_START_X * self.window_width)
+        start_y = int(CARD_START_Y * self.window_height)
+        spacing = int(CARD_SPACING * self.window_width)
+
+        # Add window offset if using window mode
+        if self.window_manager:
+            start_x += self.window_manager.window_x
+            start_y += self.window_manager.window_y
 
         # Check for up to 5 task positions
         for i in range(5):
             x = start_x + (i * spacing)
             y = start_y
 
-            # Make sure we're not going off screen
-            if x + card_width > self.screen_width:
-                break
+            # Make sure we're not going off window bounds
+            if self.window_manager:
+                max_x = self.window_manager.window_x + self.window_manager.window_width
+                if x + card_width > max_x:
+                    break
+            else:
+                if x + card_width > self.window_width:
+                    break
 
             cards.append((x, y, card_width, card_height))
 
@@ -140,16 +164,79 @@ class TaskCardDetector:
 
         return False
 
-    def is_task_available(self, x: int, y: int, width: int, height: int) -> bool:
+    def is_task_locked(self, x: int, y: int, width: int, height: int) -> bool:
         """
-        Determine if a task card is available (not completing).
+        Check if a task card has the locked symbol in the middle.
 
         Args:
             x, y, width, height: Task card region
 
         Returns:
-            True if task is available, False if completing
+            True if locked symbol found, False otherwise
         """
+        from template_matcher import find_template_on_screen
+        from pathlib import Path
+
+        # Check if locked template exists
+        if not Path(self.locked_task_template).exists():
+            return False
+
+        # Capture the card region (middle area where lock symbol appears)
+        # Focus on center of card
+        center_x = x + width // 4
+        center_y = y + height // 4
+        center_width = width // 2
+        center_height = height // 2
+
+        # Capture center region
+        screenshot = pyautogui.screenshot(region=(center_x, center_y, center_width, center_height))
+        screenshot_np = np.array(screenshot)
+        screenshot_bgr = cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2BGR)
+
+        # Try to find locked symbol using template matching on the center region
+        # We'll use a temporary save and load approach
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            tmp_path = tmp.name
+            cv2.imwrite(tmp_path, screenshot_bgr)
+
+        # Load template
+        template = cv2.imread(self.locked_task_template)
+        if template is None:
+            return False
+
+        # Load screenshot
+        img = cv2.imread(tmp_path)
+
+        # Template matching
+        result = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+
+        # Clean up temp file
+        import os
+        os.unlink(tmp_path)
+
+        # Threshold for locked symbol (lower since it's a distinctive symbol)
+        if max_val >= 0.6:
+            print(f"    🔒 LOCKED symbol detected (confidence: {max_val:.2%})")
+            return True
+
+        return False
+
+    def is_task_available(self, x: int, y: int, width: int, height: int) -> bool:
+        """
+        Determine if a task card is available (not completing or locked).
+
+        Args:
+            x, y, width, height: Task card region
+
+        Returns:
+            True if task is available, False if completing or locked
+        """
+        # First check if task is locked (highest priority - skip if locked)
+        if self.is_task_locked(x, y, width, height):
+            return False
+
         # Check for green checkmark (strong indicator)
         if self.has_green_checkmark(x, y, width, height):
             return True
@@ -179,45 +266,97 @@ class TaskCardDetector:
 
         return (click_x, click_y)
 
-    def find_first_available_task(self) -> Optional[Tuple[int, int]]:
+    def scroll_tasks_left(self, scroll_amount: int = 400):
+        """
+        Scroll/drag the task list to the left to reveal tasks on the right.
+
+        Args:
+            scroll_amount: Number of pixels to scroll left
+        """
+        print("\n=== Scrolling Tasks Left ===")
+        print(f"Dragging task list {scroll_amount}px to reveal more tasks...")
+
+        # Get the middle of the task card area
+        from detection_config import CARD_START_X, CARD_START_Y, CARD_HEIGHT
+
+        # Calculate drag start position (center of task area)
+        if self.window_manager:
+            start_x = self.window_manager.window_x + int(self.window_width * 0.5)
+            start_y = self.window_manager.window_y + int(self.window_height * CARD_START_Y) + int(self.window_height * CARD_HEIGHT * 0.5)
+        else:
+            start_x = int(self.window_width * 0.5)
+            start_y = int(self.window_height * CARD_START_Y) + int(self.window_height * CARD_HEIGHT * 0.5)
+
+        # Drag from center to the left (to reveal tasks on the right)
+        end_x = start_x - scroll_amount
+
+        print(f"Dragging from ({start_x}, {start_y}) to ({end_x}, {start_y})")
+
+        # Perform the drag
+        pyautogui.moveTo(start_x, start_y)
+        import time
+        time.sleep(0.2)
+        pyautogui.drag(-scroll_amount, 0, duration=0.5)
+        time.sleep(0.5)  # Wait for scroll to settle
+
+        print("✅ Scroll complete")
+
+    def find_first_available_task(self, max_scrolls: int = 3) -> Optional[Tuple[int, int]]:
         """
         Find the first available task card and return click coordinates.
+        If no tasks found, scroll left to reveal more tasks.
+
+        Args:
+            max_scrolls: Maximum number of times to scroll if no tasks found
 
         Returns:
             (x, y) coordinates to click, or None if no available task
         """
         print("\n=== Detecting Task Cards ===")
 
-        # Find all task cards
-        cards = self.find_task_cards()
+        scrolls_performed = 0
 
-        if not cards:
-            print("❌ No task cards detected")
-            return None
+        while scrolls_performed <= max_scrolls:
+            # Find all task cards
+            cards = self.find_task_cards()
 
-        print(f"Found {len(cards)} task card(s)")
+            if not cards:
+                print("❌ No task cards detected")
+                return None
 
-        # Check each card from left to right
-        for i, (x, y, w, h) in enumerate(cards, 1):
-            print(f"\nChecking card {i}: region ({x}, {y}, {w}x{h})")
+            print(f"Found {len(cards)} task card(s)")
 
-            if self.is_task_available(x, y, w, h):
-                print(f"  ✅ Card {i} is AVAILABLE!")
+            # Check each card from left to right
+            for i, (x, y, w, h) in enumerate(cards, 1):
+                print(f"\nChecking card {i}: region ({x}, {y}, {w}x{h})")
 
-                # Get click position
-                click_x, click_y = self.get_click_position(x, y, w, h)
-                print(f"  Click position: ({click_x}, {click_y})")
+                if self.is_task_available(x, y, w, h):
+                    print(f"  ✅ Card {i} is AVAILABLE!")
 
-                return (click_x, click_y)
+                    # Get click position
+                    click_x, click_y = self.get_click_position(x, y, w, h)
+                    print(f"  Click position: ({click_x}, {click_y})")
+
+                    return (click_x, click_y)
+                else:
+                    print(f"  ⏱️  Card {i} is COMPLETING or LOCKED")
+
+            # No available tasks found in current view
+            if scrolls_performed < max_scrolls:
+                print(f"\n⚠️  No available tasks in current view (scroll {scrolls_performed + 1}/{max_scrolls})")
+                self.scroll_tasks_left(scroll_amount=400)
+                scrolls_performed += 1
+                print(f"Checking tasks again after scroll...")
             else:
-                print(f"  ⏱️  Card {i} is COMPLETING")
+                break
 
-        print("\n❌ No available tasks found")
+        print(f"\n❌ No available tasks found after {scrolls_performed} scroll(s)")
         return None
 
     def visualize_detection(self, save_path: str = "task_cards_debug.png"):
         """
         Create visualization showing detected task cards.
+        Shows locked tasks in orange, completing in red, available in green.
         """
         screenshot = pyautogui.screenshot()
         screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
@@ -225,9 +364,20 @@ class TaskCardDetector:
         cards = self.find_task_cards()
 
         for i, (x, y, w, h) in enumerate(cards, 1):
-            # Draw rectangle around card
+            # Check task state
+            is_locked = self.is_task_locked(x, y, w, h)
             is_available = self.is_task_available(x, y, w, h)
-            color = (0, 255, 0) if is_available else (0, 0, 255)  # Green if available, Red if completing
+
+            # Determine color and label
+            if is_locked:
+                color = (0, 165, 255)  # Orange for locked
+                label = "LOCKED"
+            elif is_available:
+                color = (0, 255, 0)  # Green for available
+                label = "AVAILABLE"
+            else:
+                color = (0, 0, 255)  # Red for completing
+                label = "COMPLETING"
 
             # Scale coordinates for drawing on screenshot
             sx = int(x * self.scale_factor)
@@ -237,8 +387,8 @@ class TaskCardDetector:
 
             cv2.rectangle(screenshot, (sx, sy), (sx + sw, sy + sh), color, 3)
 
-            # Draw click position
-            if is_available:
+            # Draw click position only for available tasks
+            if is_available and not is_locked:
                 click_x, click_y = self.get_click_position(x, y, w, h)
                 scx = int(click_x * self.scale_factor)
                 scy = int(click_y * self.scale_factor)
@@ -247,7 +397,6 @@ class TaskCardDetector:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
             # Label
-            label = "AVAILABLE" if is_available else "COMPLETING"
             cv2.putText(screenshot, f"{i}: {label}", (sx, sy - 10),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
