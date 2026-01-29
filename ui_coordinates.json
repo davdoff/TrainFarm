@@ -2,16 +2,16 @@
   "elements": {
     "task_button": {
       "name": "task_button",
-      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/task.png",
-      "x": 103,
-      "y": 707,
-      "width": 101,
-      "height": 116,
-      "confidence": 0.8963974714279175
+      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/ui/task.png",
+      "x": 93,
+      "y": 701,
+      "width": 52,
+      "height": 83,
+      "confidence": 0.9934189319610596
     },
     "full_task": {
       "name": "full_task",
-      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/FullTask.png",
+      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/tasks/BottomTaskAvailableTrains.png",
       "x": null,
       "y": null,
       "width": null,
@@ -20,7 +20,7 @@
     },
     "material_icon": {
       "name": "material_icon",
-      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/iconNextToMaterials.png",
+      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/Materials/Coal.png",
       "x": null,
       "y": null,
       "width": null,
@@ -29,7 +29,7 @@
     },
     "storage": {
       "name": "storage",
-      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/Storage.png",
+      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/ui/Storage.png",
       "x": null,
       "y": null,
       "width": null,
