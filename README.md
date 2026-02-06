@@ -59,6 +59,7 @@ TrainFarm/
    python -m tools.visualize              # General visualization
    python -m tools.visualize_realtime     # Real-time visualization
    python -m tools.test_template_matching # Test template matching accuracy
+   python tools/configure_regions.py      # Configure detection regions interactively
    ```
 
 ## How It Works
@@ -106,6 +107,40 @@ Perfect for:
 - Finding optimal threshold values
 - Debugging template matching issues
 - Understanding search region impact on performance
+
+## Region Configuration Tool
+
+Interactive visual tool to precisely define detection zones and lookup areas:
+
+```bash
+python tools/configure_regions.py
+```
+
+**Features:**
+- Click and drag to draw rectangular regions
+- Visual overlay of all saved regions
+- Automatic conversion to percentage coordinates (0.0-1.0)
+- Generate ready-to-use Python code for detection_config.py
+- Save/load regions from JSON
+- Real-time coordinate display
+
+**Controls:**
+- Click & Drag: Draw region
+- N: Name and save region
+- C: Clear current selection
+- D: Delete last region
+- S: Save all to file
+- G: Generate Python code
+- R: Retake screenshot
+- Q: Quit
+
+**Perfect for:**
+- Defining new detection zones
+- Calibrating OCR regions
+- Setting up template search areas
+- Precise coordinate configuration
+
+See `tools/REGION_CONFIGURATION_GUIDE.md` for detailed usage.
 
 ## Emergency Stop
 

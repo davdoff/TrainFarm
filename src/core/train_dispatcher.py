@@ -6,8 +6,19 @@ Dispatches trains after a task is started.
 
 import time
 import pyautogui
+import cv2
+import numpy as np
+import pytesseract
 from typing import Optional
+from difflib import SequenceMatcher
 from src.detectors.template_matcher import find_template_on_screen
+from src.config.detection_config import (
+    TRAIN_STATUS_TEXT_LEFT,
+    TRAIN_STATUS_TEXT_TOP,
+    TRAIN_STATUS_TEXT_RIGHT,
+    TRAIN_STATUS_TEXT_BOTTOM,
+    TRAIN_STATUS_MATCH_THRESHOLD
+)
 
 
 class TrainDispatcher:
@@ -18,6 +29,120 @@ class TrainDispatcher:
         # Train positions are estimated based on screen layout
         # First train is typically at 1/6 of screen width from left
         self.screen_width, self.screen_height = pyautogui.size()
+
+    def _fuzzy_text_match(self, text: str, target: str, threshold: float = 0.70) -> bool:
+        """
+        Check if text contains target string with fuzzy matching.
+        Uses partial ratio to handle OCR errors.
+
+        Args:
+            text: The OCR text to search in
+            target: The target string to find
+            threshold: Minimum match ratio (0.0-1.0)
+
+        Returns:
+            True if match ratio >= threshold
+        """
+        if not text or not target:
+            return False
+
+        # Normalize both strings (uppercase, remove extra spaces)
+        text = ' '.join(text.upper().split())
+        target = ' '.join(target.upper().split())
+
+        # Calculate similarity ratio
+        ratio = SequenceMatcher(None, text, target).ratio()
+
+        # Also check if target is substring (for partial matches)
+        if target in text:
+            return True
+
+        # Check similarity with threshold
+        return ratio >= threshold
+
+    def _read_train_status_text(self) -> str:
+        """
+        Read the train status text using OCR from the configured region.
+
+        Returns:
+            The OCR text found, or empty string if nothing detected
+        """
+        # Capture screenshot
+        screenshot = pyautogui.screenshot()
+        screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+
+        # Calculate pixel coordinates from percentages
+        x1 = int(self.screen_width * TRAIN_STATUS_TEXT_LEFT)
+        y1 = int(self.screen_height * TRAIN_STATUS_TEXT_TOP)
+        x2 = int(self.screen_width * TRAIN_STATUS_TEXT_RIGHT)
+        y2 = int(self.screen_height * TRAIN_STATUS_TEXT_BOTTOM)
+
+        # Extract region
+        roi = screenshot[y1:y2, x1:x2]
+
+        # Preprocess for OCR
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+        # Try multiple preprocessing techniques
+        # 1. Simple threshold
+        _, thresh1 = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+
+        # 2. Adaptive threshold
+        thresh2 = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+
+        # 3. Otsu's threshold
+        _, thresh3 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Try OCR on all versions and combine results
+        texts = []
+        for img in [gray, thresh1, thresh2, thresh3]:
+            try:
+                # Use Tesseract with config optimized for text
+                custom_config = r'--oem 3 --psm 6'
+                text = pytesseract.image_to_string(img, config=custom_config)
+                if text.strip():
+                    texts.append(text.strip())
+            except Exception as e:
+                print(f"  OCR error: {e}")
+                continue
+
+        # Return the longest text (usually most complete)
+        if texts:
+            result = max(texts, key=len)
+            return result
+        return ""
+
+    def check_trains_available_by_text(self) -> bool:
+        """
+        Check if trains are available by reading status text with OCR.
+
+        Returns:
+            True if "TAP THE TRAIN TO" text is detected (trains available)
+            False if "PLEASE WAIT" text is detected (all trains used) or text unclear
+        """
+        text = self._read_train_status_text()
+
+        if not text:
+            print("  ⚠️  No text detected in train status region")
+            return False
+
+        print(f"  OCR Text: '{text}'")
+
+        # Check for "trains available" text
+        if self._fuzzy_text_match(text, "TAP THE TRAIN TO", TRAIN_STATUS_MATCH_THRESHOLD):
+            print("  ✓ Trains available (TAP THE TRAIN TO detected)")
+            return True
+
+        # Check for "all trains used" text
+        if self._fuzzy_text_match(text, "PLEASE WAIT UNTIL", TRAIN_STATUS_MATCH_THRESHOLD):
+            print("  ✓ All trains used (PLEASE WAIT detected)")
+            return False
+
+        # If neither matches clearly, be conservative
+        print("  ⚠️  Train status unclear from OCR")
+        return False
 
     def find_dispatch_button(self) -> Optional[tuple]:
         """
@@ -33,28 +158,57 @@ class TrainDispatcher:
 
     def check_all_trains_used(self) -> bool:
         """
-        Check if the "all trains used" progress bar is visible.
-        This appears in place of the Dispatch button when all trains are dispatched.
+        Check if all trains are used by reading the status text with OCR.
+
+        Uses OCR to read the train status text region and checks for:
+        - "TAP THE TRAIN TO" = Trains available (returns False)
+        - "PLEASE WAIT UNTIL THE TRAINS REACH THEIR DESTINATION" = All trains used (returns True)
 
         IMPORTANT: Moves mouse away from progress bar to avoid clicking it (uses gems!)
 
         Returns:
-            True if all trains used progress bar found, False otherwise
+            True if all trains are used (PLEASE WAIT text detected)
+            False if trains are available (TAP THE TRAIN TO text detected)
         """
-        all_trains_template = "Templates/tasks/AlltrainsUsed.png"
-        match = find_template_on_screen(all_trains_template, threshold=0.6)
+        # Read status text
+        text = self._read_train_status_text()
 
-        if match:
-            print("✓ All trains used progress bar detected")
+        if not text:
+            print("  ⚠️  No status text detected - trying template fallback")
+            # Fall back to template matching as last resort
+            all_trains_template = "Templates/tasks/AlltrainsUsed.png"
+            match = find_template_on_screen(all_trains_template, threshold=0.6)
+            if match:
+                print("✓ All trains used (template match)")
+                # Move mouse to safe position
+                safe_x = int(self.screen_width / 2)
+                safe_y = int(self.screen_height / 2)
+                pyautogui.moveTo(safe_x, safe_y)
+                return True
+            return False
+
+        print(f"  OCR Text: '{text}'")
+
+        # Check for "all trains used" text
+        if self._fuzzy_text_match(text, "PLEASE WAIT UNTIL", TRAIN_STATUS_MATCH_THRESHOLD):
+            print("✓ All trains used (PLEASE WAIT detected)")
 
             # CRITICAL: Move mouse away from the progress bar immediately!
             # Clicking the progress bar uses gems, which we want to avoid
             safe_x = int(self.screen_width / 2)
             safe_y = int(self.screen_height / 2)
             pyautogui.moveTo(safe_x, safe_y)
-            print(f"   Moved mouse to safe position ({safe_x}, {safe_y}) to avoid clicking progress bar")
+            print(f"   Moved mouse to safe position ({safe_x}, {safe_y})")
 
             return True
+
+        # Check for "trains available" text
+        if self._fuzzy_text_match(text, "TAP THE TRAIN TO", TRAIN_STATUS_MATCH_THRESHOLD):
+            print("  Trains still available (TAP THE TRAIN TO detected)")
+            return False
+
+        # If text is unclear, assume trains might still be available
+        print("  ⚠️  Status unclear from OCR - assuming trains available")
         return False
 
     def click_first_train(self):

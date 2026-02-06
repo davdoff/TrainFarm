@@ -1,0 +1,12 @@
+# Auto-generated region configuration
+# Screen size: 2880x1800
+# Generated with tools/configure_regions.py
+
+# TEXT_DISPLAY_DISPATCH_TRAINS
+# Pixel coordinates: (1303, 1321) to (2815, 1383)
+# Size: 1512x62 px
+TEXT_DISPLAY_DISPATCH_TRAINS_LEFT = 0.4524
+TEXT_DISPLAY_DISPATCH_TRAINS_TOP = 0.7339
+TEXT_DISPLAY_DISPATCH_TRAINS_RIGHT = 0.9774
+TEXT_DISPLAY_DISPATCH_TRAINS_BOTTOM = 0.7683
+

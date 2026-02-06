@@ -81,6 +81,30 @@ TRAIN_CAPACITY_GAP = 0.275            # Gap between each train slot (23% of scre
 AVERAGE_TRAIN_CAPACITY = 30     # Average capacity per train
 
 # ============================================================================
+# TRAIN STATUS TEXT DETECTION ZONE
+# ============================================================================
+# Region where train status text appears (e.g., "TAP THE TRAIN TO..." or "PLEASE WAIT...")
+# This text appears when starting to send trains (tasks or resource generation)
+# Values are percentages of screen size (0.0 = top/left edge, 1.0 = bottom/right edge)
+# Configured using: python tools/configure_regions.py
+#
+# Expected text states:
+#   - "TAP THE TRAIN TO" = Trains available for dispatch
+#   - "PLEASE WAIT UNTIL THE TRAINS REACH THEIR DESTINATION" = All trains used
+#
+# Region: TEXT_TRAIN_DISPATCHING_CONTEXT
+# Pixel coordinates: (1375, 1321) to (2725, 1391)
+# Size: 1350x70 px
+TRAIN_STATUS_TEXT_LEFT = 0.4774      # Left edge of status text region
+TRAIN_STATUS_TEXT_TOP = 0.7339       # Top edge of status text region
+TRAIN_STATUS_TEXT_RIGHT = 0.9462     # Right edge of status text region
+TRAIN_STATUS_TEXT_BOTTOM = 0.7728    # Bottom edge of status text region
+
+# Fuzzy matching threshold for OCR text (0.0-1.0)
+# At least 70% of the important text should match to handle OCR errors
+TRAIN_STATUS_MATCH_THRESHOLD = 0.70
+
+# ============================================================================
 # OPERATOR COUNT DETECTION ZONE SETTINGS
 # ============================================================================
 # These define where to look for the operator count text (x/y format)

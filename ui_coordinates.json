@@ -7,7 +7,7 @@
       "y": 701,
       "width": 52,
       "height": 83,
-      "confidence": 0.9934189319610596
+      "confidence": 0.9884605407714844
     },
     "full_task": {
       "name": "full_task",
@@ -30,6 +30,24 @@
     "storage": {
       "name": "storage",
       "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/ui/Storage.png",
+      "x": null,
+      "y": null,
+      "width": null,
+      "height": null,
+      "confidence": null
+    },
+    "home_button": {
+      "name": "home_button",
+      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/buttons/HomeScreenButton.png",
+      "x": null,
+      "y": null,
+      "width": null,
+      "height": null,
+      "confidence": null
+    },
+    "copper_wire": {
+      "name": "copper_wire",
+      "template_path": "/Users/davidbotosineanu/Documents/GitHub/TrainFarm/Templates/Materials/CopperWire.png",
       "x": null,
       "y": null,
       "width": null,

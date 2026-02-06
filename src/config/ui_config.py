@@ -64,6 +64,26 @@ class UIConfig:
             name="storage",
             template_path=str(TEMPLATES_DIR / "ui" / "Storage.png")
         ),
+        "home_button": UIElement(
+            name="home_button",
+            template_path=str(TEMPLATES_DIR / "buttons" / "HomeScreenButton.png")
+        ),
+        "copper_wire": UIElement(
+            name="copper_wire",
+            template_path=str(TEMPLATES_DIR / "Materials" / "CopperWire.png")
+        ),
+        "factory_blue_button": UIElement(
+            name="factory_blue_button",
+            template_path=str(TEMPLATES_DIR / "buttons" / "FactoryIconBlueButton.png")
+        ),
+        "materials_needed_marker": UIElement(
+            name="materials_needed_marker",
+            template_path=str(TEMPLATES_DIR / "ui" / "TemplateUnderMaterialsNeeded.png")
+        ),
+        "red_number": UIElement(
+            name="red_number",
+            template_path=str(TEMPLATES_DIR / "ui" / "RedNumber.png")
+        ),
     }
 
     # Offsets from reference elements

@@ -228,6 +228,27 @@ class TaskAutomation:
         print("\n=== Step 6: Opening Warehouse ===")
         return self.locate_and_click("storage")
 
+    def navigate_to_home(self) -> bool:
+        """
+        Navigate to home screen by clicking the Home button.
+        Should be called after completing tasks and before collecting freebies.
+        """
+        print("\n=== Navigating to Home Screen ===")
+        home_button = find_template_on_screen(
+            self.config.ELEMENTS["home_button"].template_path,
+            threshold=0.7
+        )
+
+        if home_button:
+            print(f"✓ Found Home button at ({home_button['x']}, {home_button['y']})")
+            self.safe_click(home_button['x'], home_button['y'])
+            print("✅ Clicked Home button")
+            time.sleep(1.0)  # Wait for navigation
+            return True
+        else:
+            print("❌ Home button not found")
+            return False
+
     # OLD METHODS - NOT USED ANYMORE (replaced by color-based detection)
     # These methods used the old Material class and queue system
     # Now we use _find_material_numbers() which detects black/red text
@@ -1161,6 +1182,10 @@ def main():
 
             if success:
                 print("\n✅ Task workflow completed successfully!")
+
+                # Navigate to home screen before collecting freebies
+                automation.navigate_to_home()
+
                 print(f"⏳ Waiting {poll_interval} seconds before next check...")
                 # Collect freebies during the delay period
                 freebie_collector.collect_during_delay(poll_interval, max_freebies=4)
